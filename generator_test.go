@@ -8,6 +8,7 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/relay"
+	"golang.org/x/net/context"
 )
 
 var str1 = "Hello"
@@ -64,15 +65,15 @@ func (b B) ArgsForC() CArgs {
 	}
 }
 
-func (a A) ResolveB(p graphql.ResolveParams) (B, error) {
+func (a A) ResolveB() (B, error) {
 	return B{}, nil
 }
 
-func (b B) ResolveStr1(p graphql.ResolveParams) (*string, error) {
+func (b B) ResolveStr1() (*string, error) {
 	return &str1, nil
 }
-func (b B) ResolveC(p graphql.ResolveParams) (C, error) {
-	return C{Int1: int1, Float1: float1, Str2: p.Args["token"].(string), Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+func (b B) ResolveC(argsC CArgs, ctx Context1) (C, error) {
+	return C{Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
 }
 func (c C) ResolveBool1(p graphql.ResolveParams) (bool, error) {
 	return bool1, nil
@@ -83,6 +84,10 @@ func (c C) ResolveD(p graphql.ResolveParams) (*relay.Connection, error) {
 		D{Field1: "c2"},
 		D{Field1: "c3"},
 	}, relay.NewConnectionArguments(p.Args)), nil
+}
+
+type Context1 struct {
+	Context1 string
 }
 
 func TestGenerateGraphqlObject(t *testing.T) {
@@ -116,9 +121,13 @@ func TestGenerateGraphqlObject(t *testing.T) {
 				}
 		}
 	} }`
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, "context1", "context1value")
 	res := graphql.Do(graphql.Params{
 		Schema:        Schema,
 		RequestString: query,
+		Context:       ctx,
 	})
 	if res.HasErrors() {
 		t.Fatal(res.Errors)
@@ -162,7 +171,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	}
 
 	//Check args
-	if output.B.C.Str2 != "token1" {
+	if output.B.C.Str2 != "token1context1value" {
 		t.Fatal("Invalid provide args, expected output.B.C.Str2 to be token1, has " + output.B.C.Str2)
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/relay"
+	"golang.org/x/net/context"
 )
 
 type RelayGlobalLID struct{}
@@ -134,6 +135,43 @@ func getGraphQLType(fieldType reflect.Type, types map[reflect.Type]*graphql.Obje
 	}
 	return graphqlType
 }
+
+func getArgsForResolve(args map[string]interface{}, typ reflect.Type) reflect.Value {
+	var output = reflect.New(typ)
+	for key, value := range args {
+		n := lU(key)
+		if _, ok := typ.FieldByName(n); ok {
+			field := output.Elem().FieldByName(n)
+			if field.CanInterface() {
+
+				if field.Kind() == reflect.Ptr {
+					field.Set(reflect.New(field.Type().Elem()))
+					field.Elem().Set(reflect.ValueOf(value))
+				} else {
+					field.Set(reflect.ValueOf(value))
+				}
+
+			}
+		}
+	}
+	return output.Elem()
+}
+func getContextForResolve(context context.Context, typ reflect.Type) reflect.Value {
+	var output = reflect.New(typ)
+
+	for i := 0; i < typ.NumField(); i++ {
+		if !output.Elem().Field(i).CanInterface() {
+			continue
+		}
+		value := context.Value(lA(typ.Field(i).Name))
+		if value == nil {
+			continue
+		}
+		output.Elem().Field(i).Set(reflect.ValueOf(value))
+	}
+
+	return output.Elem()
+}
 func getResolveFunc(sourceType reflect.Type, method reflect.Method) func(p graphql.ResolveParams) (interface{}, error) {
 	return func(p graphql.ResolveParams) (interface{}, error) {
 
@@ -144,7 +182,23 @@ func getResolveFunc(sourceType reflect.Type, method reflect.Method) func(p graph
 			source = reflect.ValueOf(p.Source)
 		}
 
-		values := method.Func.Call([]reflect.Value{source, reflect.ValueOf(p)})
+		argumentsForCall := []reflect.Value{source}
+
+		if method.Func.Type().NumIn() > 1 {
+			if method.Func.Type().In(1) == reflect.TypeOf(graphql.ResolveParams{}) {
+				argumentsForCall = append(argumentsForCall, reflect.ValueOf(p))
+			} else {
+				//args
+				argumentsForCall = append(argumentsForCall, getArgsForResolve(p.Args, method.Func.Type().In(1)))
+
+				//context
+				if method.Func.Type().NumIn() > 2 {
+					argumentsForCall = append(argumentsForCall, getContextForResolve(p.Context, method.Func.Type().In(2)))
+				}
+			}
+		}
+
+		values := method.Func.Call(argumentsForCall)
 		if len(values) != 2 {
 			panic("Resolve func should return 2 values: interface{}, error")
 		}
@@ -204,5 +258,10 @@ func GenerateGraphqlObject(typ interface{}) *graphql.Object {
 func lA(s string) string {
 	a := []rune(s)
 	a[0] = unicode.ToLower(a[0])
+	return string(a)
+}
+func lU(s string) string {
+	a := []rune(s)
+	a[0] = unicode.ToUpper(a[0])
 	return string(a)
 }
