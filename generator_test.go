@@ -29,19 +29,20 @@ type B struct {
 	C    C
 }
 type CArgs struct {
-	Token string
+	Token *string
 	x     C
 }
 type C struct {
-	Str2   string `graphql:"-"`
-	Int1   int
-	Float1 float64
-	Bool1  bool
-	Int2   *int
-	Int3   *int
-	Arr1   *[]string
-	Map1   map[string]interface{}
-	D      DConnection
+	Ignore1 string `graphql:"-"`
+	Str2    string
+	Int1    int
+	Float1  float64
+	Bool1   bool
+	Int2    *int
+	Int3    *int
+	Arr1    *[]string
+	Map1    map[string]interface{}
+	D       DConnection
 }
 type D struct {
 	Field1 string `json:"field1"`
@@ -57,8 +58,9 @@ func (a A) Description() string {
 	return "AAA"
 }
 func (b B) ArgsForC() CArgs {
+	var x = "" + str1
 	return CArgs{
-		Token: "111",
+		Token: &x,
 	}
 }
 
@@ -70,7 +72,7 @@ func (b B) ResolveStr1(p graphql.ResolveParams) (*string, error) {
 	return &str1, nil
 }
 func (b B) ResolveC(p graphql.ResolveParams) (C, error) {
-	return C{Int1: int1, Float1: float1, Str2: "Hi", Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+	return C{Int1: int1, Float1: float1, Str2: p.Args["token"].(string), Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
 }
 func (c C) ResolveBool1(p graphql.ResolveParams) (bool, error) {
 	return bool1, nil
@@ -97,7 +99,8 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	}
 	query := `query Q1{ b{
 		str1
-		c{
+		c(token:"token1"){
+			str2
 			int1
 			int2
 			int3
@@ -156,5 +159,10 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	}
 	if output.B.C.D.Edges[2].Node.Field1 != "c3" {
 		t.Fatal("Invalid value output.B.C.D.Edges[2].Node.Field1, expected c3, has " + output.B.C.D.Edges[2].Node.Field1)
+	}
+
+	//Check args
+	if output.B.C.Str2 != "token1" {
+		t.Fatal("Invalid provide args, expected output.B.C.Str2 to be token1, has " + output.B.C.Str2)
 	}
 }

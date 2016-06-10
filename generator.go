@@ -33,30 +33,20 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 
 		//init new field
 		var graphqlField = &graphql.Field{}
-		var isNull = false
+
 		//
 		var field = sourceType.Field(i)
 		var fieldType = field.Type
 		var fieldName = field.Name
-		var fieldKind = fieldType.Kind()
 
 		if fieldType == reflect.TypeOf(RelayGlobalLID{}) {
 			graphqlField = relay.GlobalIDField(sourceType.Field(i).Name, nil)
 			continue
 		} else {
 
-			if fieldKind == reflect.Ptr {
-				isNull = true
-				fieldKind = fieldType.Elem().Kind()
-				fieldType = fieldType.Elem()
-			}
-			graphqlField.Type = getTypeByKind(field, fieldType, types)
+			graphqlField.Type = getGraphQLType(fieldType, types)
 			if graphqlField.Type == nil {
 				continue
-			}
-
-			if !isNull {
-				graphqlField.Type = graphql.NewNonNull(graphqlField.Type)
 			}
 
 			//Resolve
@@ -65,7 +55,9 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 			}
 
 			///Args
-			if _, ok := sourceType.MethodByName("ArgsFor" + fieldName); ok {
+			if method, ok := sourceType.MethodByName("ArgsFor" + fieldName); ok {
+
+				graphqlField.Args = getArgs(method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0], types)
 
 			}
 
@@ -84,7 +76,32 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 
 	return obj
 }
-func getTypeByKind(field reflect.StructField, fieldType reflect.Type, types map[reflect.Type]*graphql.Object) graphql.Output {
+
+func getArgs(sourceValue reflect.Value, types map[reflect.Type]*graphql.Object) graphql.FieldConfigArgument {
+	args := graphql.FieldConfigArgument{}
+	sourceType := sourceValue.Type()
+	for i := 0; i < sourceType.NumField(); i++ {
+		field := sourceType.Field(i)
+		if !sourceValue.Field(i).CanInterface() {
+			continue
+		}
+		args[lA(field.Name)] = &graphql.ArgumentConfig{
+			Type:         getGraphQLType(field.Type, types),
+			Description:  field.Name,
+			DefaultValue: sourceValue.Field(i).Interface(),
+		}
+	}
+	return args
+}
+func getGraphQLType(fieldType reflect.Type, types map[reflect.Type]*graphql.Object) graphql.Output {
+	fieldKind := fieldType.Kind()
+	var isNull = false
+	if fieldKind == reflect.Ptr {
+		isNull = true
+		fieldKind = fieldType.Elem().Kind()
+		fieldType = fieldType.Elem()
+	}
+
 	kind := fieldType.Kind()
 	if kind == reflect.Struct {
 		if fieldObj, ok := types[fieldType]; ok {
@@ -93,23 +110,29 @@ func getTypeByKind(field reflect.StructField, fieldType reflect.Type, types map[
 			return _GenerateGraphqlObject(reflect.New(fieldType).Elem().Interface(), types)
 		}
 	}
+	var graphqlType graphql.Output
 	switch kind {
 	case reflect.String:
-		return graphql.String
+		graphqlType = graphql.String
 	case reflect.Int, reflect.Int32, reflect.Int64:
-		return graphql.Int
+		graphqlType = graphql.Int
 	case reflect.Float32, reflect.Float64:
-		return graphql.Float
+		graphqlType = graphql.Float
 	case reflect.Bool:
-		return graphql.Boolean
+		graphqlType = graphql.Boolean
 	case reflect.Slice:
-		t := getTypeByKind(field, fieldType.Elem(), types)
-		return graphql.NewList(t)
+		t := getGraphQLType(fieldType.Elem(), types)
+		graphqlType = graphql.NewList(t)
 	default:
 
 		return nil
 
 	}
+
+	if !isNull {
+		return graphql.NewNonNull(graphqlType)
+	}
+	return graphqlType
 }
 func getResolveFunc(sourceType reflect.Type, method reflect.Method) func(p graphql.ResolveParams) (interface{}, error) {
 	return func(p graphql.ResolveParams) (interface{}, error) {
