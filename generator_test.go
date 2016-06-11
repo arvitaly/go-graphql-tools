@@ -2,7 +2,6 @@ package generator
 
 import (
 	"encoding/json"
-	"log"
 	"strconv"
 	"testing"
 
@@ -40,7 +39,7 @@ var Enum1Value2 Enum1 = 2
 var Enum1Value3 Enum1 = 3
 
 type C struct {
-	Id      int    `json:"id" graphql:"ID"`
+	Id      int    `json:"id,string" graphql:"ID"`
 	Ignore1 string `graphql:"-"`
 	Str2    string
 	Int1    int
@@ -69,7 +68,7 @@ func (e Enum1) Values() map[string]Enum1 {
 }
 
 type D struct {
-	Id     string
+	Id     string `graphql:"globalid"`
 	Field1 string `json:"field1"`
 }
 type DConnection struct {
@@ -129,6 +128,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	query := `query Q1{ b{
 		str1
 		c(token:"token1"){
+			id
 			enum1
 			str2
 			int1
@@ -140,7 +140,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 			d{
 				edges{
 					node{
-						
+						id
 						field1
 						}
 					}
@@ -158,7 +158,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	if res.HasErrors() {
 		t.Fatal(res.Errors)
 	}
-	log.Println(res.Data)
+
 	b, err := json.Marshal(res.Data)
 	if err != nil {
 		t.Fatal(err)
@@ -175,9 +175,9 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	if output.B.C.Bool1 != bool1 {
 		t.Fatal("Invalid response, expected output.B.C.bool1 == " + strconv.FormatBool(bool1) + ", has " + strconv.FormatBool(output.B.C.Bool1))
 	}
-	/*if output.B.C.Id != 13 {
-		t.Fatal("Invalid output.B.C.Id")
-	}*/
+	if output.B.C.Id != 13 {
+		t.Fatal("Invalid output.B.C.Id, expected 13, has " + strconv.Itoa(output.B.C.Id))
+	}
 	if output.B.C.Int1 != int1 {
 		t.Fatal("Invalid response, expected output.B.C.Int1 == " + strconv.Itoa(int1) + ", has " + strconv.Itoa(output.B.C.Int1))
 	}
@@ -198,6 +198,9 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	}
 	if output.B.C.D.Edges[2].Node.Field1 != "c3" {
 		t.Fatal("Invalid value output.B.C.D.Edges[2].Node.Field1, expected c3, has " + output.B.C.D.Edges[2].Node.Field1)
+	}
+	if output.B.C.D.Edges[1].Node.Id != relay.ToGlobalID("D", "1002") {
+		t.Fatal("Invalid global id value output.B.C.D.Edges[0].Node.Id, expected " + relay.ToGlobalID("D", "1001") + ", has " + output.B.C.D.Edges[0].Node.Id)
 	}
 
 	//Check args

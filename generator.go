@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/relay"
 	"golang.org/x/net/context"
 )
 
@@ -48,7 +49,9 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 		if graphqlField.Type == nil {
 			continue
 		}
-
+		if graphqlTagType == "globalid" {
+			graphqlField.Resolve = getGlobalIdResolveFunc(sourceType.Name(), fieldName)
+		}
 		//Resolve
 		if method, ok := sourceType.MethodByName("Resolve" + fieldName); ok {
 			graphqlField.Resolve = getResolveFunc(sourceType, method)
@@ -76,6 +79,21 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 	return obj
 }
 
+func getGlobalIdResolveFunc(typeName string, fieldName string) func(p graphql.ResolveParams) (interface{}, error) {
+	return func(p graphql.ResolveParams) (interface{}, error) {
+		var rawId interface{}
+		switch reflect.TypeOf(p.Source).Kind() {
+		case reflect.Struct:
+			rawId = reflect.ValueOf(p.Source).FieldByName(fieldName).Interface()
+		case reflect.Map:
+			rawId = reflect.ValueOf(p.Source).MapIndex(reflect.ValueOf(fieldName)).Interface()
+		}
+		if rawId != nil {
+			return relay.ToGlobalID(typeName, rawId.(string)), nil
+		}
+		return nil, nil
+	}
+}
 func getArgs(sourceValue reflect.Value, types map[reflect.Type]*graphql.Object) graphql.FieldConfigArgument {
 	args := graphql.FieldConfigArgument{}
 	sourceType := sourceValue.Type()
