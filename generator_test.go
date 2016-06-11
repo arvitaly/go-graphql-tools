@@ -23,7 +23,6 @@ type A struct {
 
 	B2    B
 	B2Ptr *B
-	Id    RelayGlobalLID
 }
 type B struct {
 	Str1 *string
@@ -33,7 +32,15 @@ type CArgs struct {
 	Token *string
 	x     C
 }
+
+type Enum1 int
+
+var Enum1Value1 Enum1 = 1
+var Enum1Value2 Enum1 = 2
+var Enum1Value3 Enum1 = 3
+
 type C struct {
+	Id      int    `json:"id" graphql:"ID"`
 	Ignore1 string `graphql:"-"`
 	Str2    string
 	Int1    int
@@ -44,8 +51,25 @@ type C struct {
 	Arr1    *[]string
 	Map1    map[string]interface{}
 	D       DConnection
+	Enum1   Enum1 `json:"enum1,string" graphql:"enum"`
 }
+
+func (e *Enum1) UnmarshalJSON(b []byte) error {
+	if value, ok := e.Values()[string(b)]; ok {
+		*e = value
+	}
+	return nil
+}
+func (e Enum1) Values() map[string]Enum1 {
+	return map[string]Enum1{
+		"Enum1": Enum1Value1,
+		"Enum2": Enum1Value2,
+		"Enum3": Enum1Value3,
+	}
+}
+
 type D struct {
+	Id     string
 	Field1 string `json:"field1"`
 }
 type DConnection struct {
@@ -73,16 +97,16 @@ func (b B) ResolveStr1() (*string, error) {
 	return &str1, nil
 }
 func (b B) ResolveC(argsC CArgs, ctx Context1) (C, error) {
-	return C{Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+	return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
 }
 func (c C) ResolveBool1(p graphql.ResolveParams) (bool, error) {
 	return bool1, nil
 }
 func (c C) ResolveD(p graphql.ResolveParams) (*relay.Connection, error) {
 	return relay.ConnectionFromArray([]interface{}{
-		D{Field1: "c1"},
-		D{Field1: "c2"},
-		D{Field1: "c3"},
+		D{Field1: "c1", Id: "1001"},
+		D{Field1: "c2", Id: "1002"},
+		D{Field1: "c3", Id: "1003"},
 	}, relay.NewConnectionArguments(p.Args)), nil
 }
 
@@ -105,6 +129,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	query := `query Q1{ b{
 		str1
 		c(token:"token1"){
+			enum1
 			str2
 			int1
 			int2
@@ -115,6 +140,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 			d{
 				edges{
 					node{
+						
 						field1
 						}
 					}
@@ -132,22 +158,26 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	if res.HasErrors() {
 		t.Fatal(res.Errors)
 	}
+	log.Println(res.Data)
 	b, err := json.Marshal(res.Data)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var output A
 	err = json.Unmarshal(b, &output)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if *output.B.Str1 != str1 {
-		log.Println(output.B.Str1, string(*output.B.Str1))
 		t.Fatal("Invalid response, expected A.B.Str1 == " + str1 + ", has " + *output.B.Str1)
 	}
 	if output.B.C.Bool1 != bool1 {
 		t.Fatal("Invalid response, expected output.B.C.bool1 == " + strconv.FormatBool(bool1) + ", has " + strconv.FormatBool(output.B.C.Bool1))
 	}
+	/*if output.B.C.Id != 13 {
+		t.Fatal("Invalid output.B.C.Id")
+	}*/
 	if output.B.C.Int1 != int1 {
 		t.Fatal("Invalid response, expected output.B.C.Int1 == " + strconv.Itoa(int1) + ", has " + strconv.Itoa(output.B.C.Int1))
 	}
@@ -173,5 +203,10 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	//Check args
 	if output.B.C.Str2 != "token1context1value" {
 		t.Fatal("Invalid provide args, expected output.B.C.Str2 to be token1, has " + output.B.C.Str2)
+	}
+
+	//Check enum
+	if output.B.C.Enum1 != Enum1Value1 {
+		t.Fatal("Invalid value for output.B.C.Enum1, expected " + strconv.Itoa(int(Enum1Value1)) + ", has " + strconv.Itoa(int(output.B.C.Enum1)))
 	}
 }

@@ -2,14 +2,12 @@ package generator
 
 import (
 	"reflect"
+	"strings"
 	"unicode"
 
 	"github.com/graphql-go/graphql"
-	"github.com/graphql-go/relay"
 	"golang.org/x/net/context"
 )
-
-type RelayGlobalLID struct{}
 
 func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.Object) *graphql.Object {
 	sourceType := reflect.TypeOf(source)
@@ -31,6 +29,11 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 		if sourceFieldGraphqlTag == "-" {
 			continue
 		}
+		sourceFieldGraphqlTagParams := strings.Split(sourceFieldGraphqlTag, ",")
+		var graphqlTagType string
+		if len(sourceFieldGraphqlTagParams) > 0 {
+			graphqlTagType = strings.ToLower(sourceFieldGraphqlTagParams[0])
+		}
 
 		//init new field
 		var graphqlField = &graphql.Field{}
@@ -40,29 +43,24 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 		var fieldType = field.Type
 		var fieldName = field.Name
 
-		if fieldType == reflect.TypeOf(RelayGlobalLID{}) {
-			graphqlField = relay.GlobalIDField(sourceType.Field(i).Name, nil)
+		graphqlField.Type = getGraphQLType(fieldType, graphqlTagType, types)
+
+		if graphqlField.Type == nil {
 			continue
-		} else {
+		}
 
-			graphqlField.Type = getGraphQLType(fieldType, types)
-			if graphqlField.Type == nil {
-				continue
-			}
+		//Resolve
+		if method, ok := sourceType.MethodByName("Resolve" + fieldName); ok {
+			graphqlField.Resolve = getResolveFunc(sourceType, method)
+		}
 
-			//Resolve
-			if method, ok := sourceType.MethodByName("Resolve" + fieldName); ok {
-				graphqlField.Resolve = getResolveFunc(sourceType, method)
-			}
+		///Args
+		if method, ok := sourceType.MethodByName("ArgsFor" + fieldName); ok {
 
-			///Args
-			if method, ok := sourceType.MethodByName("ArgsFor" + fieldName); ok {
-
-				graphqlField.Args = getArgs(method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0], types)
-
-			}
+			graphqlField.Args = getArgs(method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0], types)
 
 		}
+
 		graphqlFields[lA(fieldName)] = graphqlField
 	}
 	config := graphql.ObjectConfig{
@@ -87,14 +85,34 @@ func getArgs(sourceValue reflect.Value, types map[reflect.Type]*graphql.Object) 
 			continue
 		}
 		args[lA(field.Name)] = &graphql.ArgumentConfig{
-			Type:         getGraphQLType(field.Type, types),
+			Type:         getGraphQLType(field.Type, "", types),
 			Description:  field.Name,
 			DefaultValue: sourceValue.Field(i).Interface(),
 		}
 	}
 	return args
 }
-func getGraphQLType(fieldType reflect.Type, types map[reflect.Type]*graphql.Object) graphql.Output {
+func getGraphQLType(fieldType reflect.Type, graphqlTagType string, types map[reflect.Type]*graphql.Object) graphql.Output {
+	if graphqlTagType == "globalid" {
+		return graphql.NewNonNull(graphql.ID)
+	}
+	if graphqlTagType == "id" {
+		return graphql.ID
+	}
+	if graphqlTagType == "enum" {
+		var configMap = graphql.EnumValueConfigMap{}
+
+		if method, ok := fieldType.MethodByName("Values"); ok {
+			res := method.Func.Call([]reflect.Value{reflect.New(fieldType).Elem()})
+			for _, key := range res[0].MapKeys() {
+				configMap[key.String()] = &graphql.EnumValueConfig{Value: res[0].MapIndex(key).Interface()}
+			}
+		}
+		return graphql.NewEnum(graphql.EnumConfig{
+			Name:   fieldType.Name(),
+			Values: configMap})
+
+	}
 	fieldKind := fieldType.Kind()
 	var isNull = false
 	if fieldKind == reflect.Ptr {
@@ -115,14 +133,14 @@ func getGraphQLType(fieldType reflect.Type, types map[reflect.Type]*graphql.Obje
 	switch kind {
 	case reflect.String:
 		graphqlType = graphql.String
-	case reflect.Int, reflect.Int32, reflect.Int64:
+	case reflect.Int, reflect.Int32, reflect.Int64, reflect.Uint:
 		graphqlType = graphql.Int
 	case reflect.Float32, reflect.Float64:
 		graphqlType = graphql.Float
 	case reflect.Bool:
 		graphqlType = graphql.Boolean
 	case reflect.Slice:
-		t := getGraphQLType(fieldType.Elem(), types)
+		t := getGraphQLType(fieldType.Elem(), graphqlTagType, types)
 		graphqlType = graphql.NewList(t)
 	default:
 
