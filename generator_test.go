@@ -95,9 +95,10 @@ func (a A) ResolveB() (B, error) {
 func (b B) ResolveStr1() (*string, error) {
 	return &str1, nil
 }
-func (b B) ResolveC(argsC CArgs, ctx Context1) (C, error) {
+
+/*func (b B) ResolveC(argsC CArgs, ctx Context1) (C, error) {
 	return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
-}
+}*/
 func (c C) ResolveBool1(p graphql.ResolveParams) (bool, error) {
 	return bool1, nil
 }
@@ -114,7 +115,14 @@ type Context1 struct {
 }
 
 func TestGenerateGraphqlObject(t *testing.T) {
-	obj := GenerateGraphqlObject(A{})
+
+	routes := map[string]interface{}{
+		"B.C": func(b B, argsC CArgs, ctx Context1) (C, error) {
+			return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+		},
+	}
+
+	obj := GenerateGraphqlObject(A{}, &routes)
 	if obj.Name() != "A" {
 		t.Fatal("Invalid name for graphql object, expected A")
 	}
