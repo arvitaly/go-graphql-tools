@@ -53,8 +53,8 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 			graphqlField.Resolve = getGlobalIdResolveFunc(sourceType.Name(), fieldName)
 		}
 		//Resolve
-		if route, ok := routes[name+"."+fieldName]; ok {
 
+		if route, ok := routes[name+"."+fieldName]; ok {
 			graphqlField.Resolve = getResolveFunc(sourceType, reflect.ValueOf(route))
 		}
 		if method, ok := sourceType.MethodByName("Resolve" + fieldName); ok {
@@ -185,8 +185,15 @@ func getArgsForResolve(args map[string]interface{}, typ reflect.Type) reflect.Va
 			if field.CanInterface() {
 
 				if field.Kind() == reflect.Ptr {
-					field.Set(reflect.New(field.Type().Elem()))
-					field.Elem().Set(reflect.ValueOf(value))
+					v := reflect.ValueOf(value)
+
+					if v.Type().Kind() == reflect.Ptr {
+						field.Set(v)
+					} else {
+						field.Set(reflect.New(field.Type().Elem()))
+						field.Elem().Set(v)
+					}
+
 				} else {
 					field.Set(reflect.ValueOf(value))
 				}
@@ -213,6 +220,26 @@ func getContextForResolve(context context.Context, typ reflect.Type) reflect.Val
 	return output.Elem()
 }
 func getResolveFunc(sourceType reflect.Type, fun reflect.Value) func(p graphql.ResolveParams) (interface{}, error) {
+	funcArgsTypes := []string{"", "", "", ""}
+	funArgsNum := fun.Type().NumIn()
+	if funArgsNum == 0 {
+		panic("Invalid resolve func, expected 1 parameter to be graphql.ResolveParams or " + sourceType.Name())
+	}
+	if fun.Type().In(0) == reflect.TypeOf(graphql.ResolveParams{}) {
+		funcArgsTypes[0] = "params"
+	} else {
+		funcArgsTypes[0] = "obj"
+	}
+	if funArgsNum > 1 {
+		if fun.Type().In(1) == reflect.TypeOf(graphql.ResolveParams{}) {
+			funcArgsTypes[1] = "params"
+		} else {
+			funcArgsTypes[1] = "args"
+		}
+	}
+	if funArgsNum > 2 {
+		funcArgsTypes[2] = "context"
+	}
 	return func(p graphql.ResolveParams) (interface{}, error) {
 
 		var source reflect.Value
@@ -222,19 +249,21 @@ func getResolveFunc(sourceType reflect.Type, fun reflect.Value) func(p graphql.R
 			source = reflect.ValueOf(p.Source)
 		}
 
-		argumentsForCall := []reflect.Value{source}
-
-		if fun.Type().NumIn() > 1 {
-			if fun.Type().In(1) == reflect.TypeOf(graphql.ResolveParams{}) {
+		argumentsForCall := []reflect.Value{}
+		for _, funcArgsType := range funcArgsTypes {
+			switch funcArgsType {
+			case "params":
 				argumentsForCall = append(argumentsForCall, reflect.ValueOf(p))
-			} else {
-				//args
+				break
+			case "obj":
+				argumentsForCall = append(argumentsForCall, source)
+				break
+			case "args":
 				argumentsForCall = append(argumentsForCall, getArgsForResolve(p.Args, fun.Type().In(1)))
-
-				//context
-				if fun.Type().NumIn() > 2 {
-					argumentsForCall = append(argumentsForCall, getContextForResolve(p.Context, fun.Type().In(2)))
-				}
+				break
+			case "context":
+				argumentsForCall = append(argumentsForCall, getContextForResolve(p.Context, fun.Type().In(2)))
+				break
 			}
 		}
 

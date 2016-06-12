@@ -29,6 +29,7 @@ type B struct {
 }
 type CArgs struct {
 	Token *string
+	After *string
 	x     C
 }
 
@@ -102,13 +103,6 @@ func (b B) ResolveStr1() (*string, error) {
 func (c C) ResolveBool1(p graphql.ResolveParams) (bool, error) {
 	return bool1, nil
 }
-func (c C) ResolveD(p graphql.ResolveParams) (*relay.Connection, error) {
-	return relay.ConnectionFromArray([]interface{}{
-		D{Field1: "c1", Id: "1001"},
-		D{Field1: "c2", Id: "1002"},
-		D{Field1: "c3", Id: "1003"},
-	}, relay.NewConnectionArguments(p.Args)), nil
-}
 
 type Context1 struct {
 	Context1 string
@@ -119,6 +113,13 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	routes := map[string]interface{}{
 		"B.C": func(b B, argsC CArgs, ctx Context1) (C, error) {
 			return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+		},
+		"C.D": func(p graphql.ResolveParams) (conn *relay.Connection, err error) {
+			return relay.ConnectionFromArray([]interface{}{
+				D{Field1: "c1", Id: "1001"},
+				D{Field1: "c2", Id: "1002"},
+				D{Field1: "c3", Id: "1003"},
+			}, relay.NewConnectionArguments(p.Args)), nil
 		},
 	}
 
