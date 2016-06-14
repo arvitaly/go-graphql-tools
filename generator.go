@@ -10,7 +10,37 @@ import (
 	"golang.org/x/net/context"
 )
 
-func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.Object, routes map[string]interface{}) *graphql.Object {
+type Generator struct {
+	Types  map[reflect.Type]graphql.Output
+	Routes map[string]interface{}
+}
+
+func NewGenerator(routes *map[string]interface{}) *Generator {
+	generator := Generator{}
+	generator.Types = map[reflect.Type]graphql.Output{}
+	if routes == nil {
+		generator.Routes = map[string]interface{}{}
+	} else {
+		generator.Routes = *routes
+	}
+	return &generator
+}
+func (generator *Generator) Generate(typ interface{}) interface{} {
+	return generator._GenerateGraphqlObject(typ)
+}
+func (generator *Generator) GenerateObject(typ interface{}) *graphql.Object {
+	return generator.Generate(typ).(*graphql.Object)
+}
+func (generator *Generator) generateInterface() {
+
+}
+
+var z interface{}
+
+func (generator *Generator) _GenerateGraphqlObject(source interface{}) graphql.Output {
+	types := generator.Types
+	routes := generator.Routes
+
 	sourceType := reflect.TypeOf(source)
 	//get name
 	var name = sourceType.Name()
@@ -23,8 +53,16 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 	} else {
 		description = name
 	}
+
+	//If type is interface
+	IsInterface := false
+	if method, ok := sourceType.MethodByName("IsInterface"); ok {
+		IsInterface = method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0].Interface().(bool)
+	}
+
 	//get fields
 	var graphqlFields = graphql.Fields{} //init graphql fields
+	var graphqlInterfaces = []*graphql.Interface{}
 	for i := 0; i < sourceType.NumField(); i++ {
 		var sourceFieldGraphqlTag = sourceType.Field(i).Tag.Get("graphql")
 		if sourceFieldGraphqlTag == "-" {
@@ -44,7 +82,7 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 		var fieldType = field.Type
 		var fieldName = field.Name
 
-		graphqlField.Type = getGraphQLType(fieldType, graphqlTagType, types, routes)
+		graphqlField.Type = generator.getGraphQLType(fieldType, graphqlTagType)
 
 		if graphqlField.Type == nil {
 			continue
@@ -64,12 +102,20 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 		///Args
 		if method, ok := sourceType.MethodByName("ArgsFor" + fieldName); ok {
 
-			graphqlField.Args = getArgs(method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0], types, routes)
+			graphqlField.Args = generator.getArgs(method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0])
 
 		}
 
-		graphqlFields[lA(fieldName)] = graphqlField
+		graphqlField.Name = lA(fieldName)
+		if field.Anonymous {
+			IsInterface = false
+			graphqlInterfaces = append(graphqlInterfaces, graphqlField.Type.(*graphql.Interface))
+		} else {
+			graphqlFields[lA(fieldName)] = graphqlField
+		}
+
 	}
+
 	config := graphql.ObjectConfig{
 		Name:        name,
 		Description: description,
@@ -77,13 +123,31 @@ func _GenerateGraphqlObject(source interface{}, types map[reflect.Type]*graphql.
 	if len(graphqlFields) > 0 {
 		config.Fields = graphqlFields
 	}
-	obj := graphql.NewObject(config)
+	if len(graphqlInterfaces) > 0 {
+		config.Interfaces = graphqlInterfaces
+	}
+
+	var obj graphql.Output
+	if IsInterface {
+		obj = graphql.NewInterface(graphql.InterfaceConfig{
+			Name:        config.Name,
+			Fields:      config.Fields,
+			Description: config.Description,
+			ResolveType: generator.ResolveType,
+		})
+	} else {
+		obj = graphql.NewObject(config)
+	}
+
 	types[sourceType] = obj
 
 	return obj
 }
-
+func (generator *Generator) ResolveType(p graphql.ResolveTypeParams) *graphql.Object {
+	return generator.Types[reflect.TypeOf(p.Value)].(*graphql.Object)
+}
 func getGlobalIdResolveFunc(typeName string, fieldName string) func(p graphql.ResolveParams) (interface{}, error) {
+
 	return func(p graphql.ResolveParams) (interface{}, error) {
 		var rawId interface{}
 		switch reflect.TypeOf(p.Source).Kind() {
@@ -98,7 +162,7 @@ func getGlobalIdResolveFunc(typeName string, fieldName string) func(p graphql.Re
 		return nil, nil
 	}
 }
-func getArgs(sourceValue reflect.Value, types map[reflect.Type]*graphql.Object, routes map[string]interface{}) graphql.FieldConfigArgument {
+func (generator *Generator) getArgs(sourceValue reflect.Value) graphql.FieldConfigArgument {
 	args := graphql.FieldConfigArgument{}
 	sourceType := sourceValue.Type()
 	for i := 0; i < sourceType.NumField(); i++ {
@@ -107,16 +171,17 @@ func getArgs(sourceValue reflect.Value, types map[reflect.Type]*graphql.Object, 
 			continue
 		}
 		args[lA(field.Name)] = &graphql.ArgumentConfig{
-			Type:         getGraphQLType(field.Type, "", types, routes),
+			Type:         generator.getGraphQLType(field.Type, field.Tag.Get("graphql")),
 			Description:  field.Name,
 			DefaultValue: sourceValue.Field(i).Interface(),
 		}
 	}
 	return args
 }
-func getGraphQLType(fieldType reflect.Type, graphqlTagType string, types map[reflect.Type]*graphql.Object, routes map[string]interface{}) graphql.Output {
+func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagType string) graphql.Output {
+	types := generator.Types
 	if graphqlTagType == "globalid" {
-		return graphql.NewNonNull(graphql.ID)
+		return graphql.ID
 	}
 	if graphqlTagType == "id" {
 		return graphql.ID
@@ -145,10 +210,11 @@ func getGraphQLType(fieldType reflect.Type, graphqlTagType string, types map[ref
 
 	kind := fieldType.Kind()
 	if kind == reflect.Struct {
+
 		if fieldObj, ok := types[fieldType]; ok {
 			return fieldObj
 		} else {
-			return _GenerateGraphqlObject(reflect.New(fieldType).Elem().Interface(), types, routes)
+			return generator._GenerateGraphqlObject(reflect.New(fieldType).Elem().Interface())
 		}
 	}
 	var graphqlType graphql.Output
@@ -162,7 +228,7 @@ func getGraphQLType(fieldType reflect.Type, graphqlTagType string, types map[ref
 	case reflect.Bool:
 		graphqlType = graphql.Boolean
 	case reflect.Slice:
-		t := getGraphQLType(fieldType.Elem(), graphqlTagType, types, routes)
+		t := generator.getGraphQLType(fieldType.Elem(), graphqlTagType)
 		graphqlType = graphql.NewList(t)
 	default:
 
@@ -241,7 +307,6 @@ func getResolveFunc(sourceType reflect.Type, fun reflect.Value) func(p graphql.R
 		funcArgsTypes[2] = "context"
 	}
 	return func(p graphql.ResolveParams) (interface{}, error) {
-
 		var source reflect.Value
 		if reflect.TypeOf(p.Source).Kind() == reflect.Map {
 			source = reflect.New(sourceType).Elem()
@@ -320,15 +385,7 @@ func getResolveFunc(sourceType reflect.Type, fun reflect.Value) func(p graphql.R
 
 	}
 }
-func GenerateGraphqlObject(typ interface{}, routes *map[string]interface{}) *graphql.Object {
-	types := map[reflect.Type]*graphql.Object{}
-	if routes != nil {
-		return _GenerateGraphqlObject(typ, types, *routes)
-	} else {
-		return _GenerateGraphqlObject(typ, types, map[string]interface{}{})
-	}
 
-}
 func lA(s string) string {
 	a := []rune(s)
 	a[0] = unicode.ToLower(a[0])

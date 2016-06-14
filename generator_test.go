@@ -2,6 +2,8 @@ package generator
 
 import (
 	"encoding/json"
+	"log"
+
 	"strconv"
 	"testing"
 
@@ -18,6 +20,7 @@ var bool1 = true
 
 type A struct {
 	Antt int
+	Node *Node
 	B    B
 
 	B2    B
@@ -68,8 +71,17 @@ func (e Enum1) Values() map[string]Enum1 {
 	}
 }
 
+type Node struct {
+	Id string `graphql:"id"`
+}
+
+func (n Node) IsInterface() bool {
+	return true
+}
+
 type D struct {
-	Id     string `graphql:"globalid"`
+	Node
+	Id     string `json:"id" graphql:"globalid"`
 	Field1 string `json:"field1"`
 }
 type DConnection struct {
@@ -123,7 +135,8 @@ func TestGenerateGraphqlObject(t *testing.T) {
 		},
 	}
 
-	obj := GenerateGraphqlObject(A{}, &routes)
+	generator := NewGenerator(&routes)
+	obj := generator.GenerateObject(A{})
 	if obj.Name() != "A" {
 		t.Fatal("Invalid name for graphql object, expected A")
 	}
@@ -131,6 +144,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	Schema, err := graphql.NewSchema(graphql.SchemaConfig{
 		Query: obj,
 	})
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +181,6 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	if res.HasErrors() {
 		t.Fatal(res.Errors)
 	}
-
 	b, err := json.Marshal(res.Data)
 	if err != nil {
 		t.Fatal(err)
@@ -205,9 +218,11 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	if len(output.B.C.D.Edges) != 3 {
 		t.Fatal("Waiting for 3 edges in output.B.C.D.Edges")
 	}
+
 	if output.B.C.D.Edges[2].Node.Field1 != "c3" {
 		t.Fatal("Invalid value output.B.C.D.Edges[2].Node.Field1, expected c3, has " + output.B.C.D.Edges[2].Node.Field1)
 	}
+	log.Println(output.B.C.D.Edges[1].Node)
 	if output.B.C.D.Edges[1].Node.Id != relay.ToGlobalID("D", "1002") {
 		t.Fatal("Invalid global id value output.B.C.D.Edges[0].Node.Id, expected " + relay.ToGlobalID("D", "1001") + ", has " + output.B.C.D.Edges[0].Node.Id)
 	}
