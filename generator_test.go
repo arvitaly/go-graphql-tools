@@ -1,9 +1,7 @@
-package generator
+package tools
 
 import (
 	"encoding/json"
-	"log"
-
 	"strconv"
 	"testing"
 
@@ -28,6 +26,7 @@ type A struct {
 }
 type B struct {
 	Str1 *string
+	Str8 string
 	C    C
 }
 type CArgs struct {
@@ -43,18 +42,18 @@ var Enum1Value2 Enum1 = 2
 var Enum1Value3 Enum1 = 3
 
 type C struct {
-	Id      int    `json:"id,string" graphql:"ID"`
-	Ignore1 string `graphql:"-"`
-	Str2    string
-	Int1    int
-	Float1  float64
-	Bool1   bool
-	Int2    *int
-	Int3    *int
-	Arr1    *[]string
-	Map1    map[string]interface{}
-	D       DConnection
-	Enum1   Enum1 `json:"enum1,string" graphql:"enum"`
+	Id      int                    `json:"id,string" graphql:"ID"`
+	Ignore1 string                 `graphql:"-"`
+	Str2    string                 `json:"str2"`
+	Int1    int                    `json:"int1"`
+	Float1  float64                `json:"float1"`
+	Bool1   bool                   `json:"bool1"`
+	Int2    *int                   `json:"int2"`
+	Int3    *int                   `json:"int3"`
+	Arr1    *[]string              `json:"arr1"`
+	Map1    map[string]interface{} `json:"map1"`
+	D       DConnection            `json:"d"`
+	Enum1   Enum1                  `json:"enum1,string" graphql:"enum"`
 }
 
 func (e *Enum1) UnmarshalJSON(b []byte) error {
@@ -81,7 +80,7 @@ func (n Node) IsInterface() bool {
 
 type D struct {
 	Node
-	Id     string `json:"id" graphql:"globalid"`
+	Id     string `json:"id" graphql:"id" resolve:"globalid"`
 	Field1 string `json:"field1"`
 }
 type DConnection struct {
@@ -101,41 +100,36 @@ func (b B) ArgsForC() CArgs {
 	}
 }
 
-func (a A) ResolveB() (B, error) {
-	return B{}, nil
-}
-
-func (b B) ResolveStr1() (*string, error) {
-	return &str1, nil
-}
-
-/*func (b B) ResolveC(argsC CArgs, ctx Context1) (C, error) {
-	return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
-}*/
-func (c C) ResolveBool1(p graphql.ResolveParams) (bool, error) {
-	return bool1, nil
-}
-
 type Context1 struct {
 	Context1 string
 }
 
 func TestGenerateGraphqlObject(t *testing.T) {
 
-	routes := map[string]interface{}{
-		"B.C": func(b B, argsC CArgs, ctx Context1) (C, error) {
-			return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
-		},
-		"C.D": func(p graphql.ResolveParams) (conn *relay.Connection, err error) {
-			return relay.ConnectionFromArray([]interface{}{
-				D{Field1: "c1", Id: "1001"},
-				D{Field1: "c2", Id: "1002"},
-				D{Field1: "c3", Id: "1003"},
-			}, relay.NewConnectionArguments(p.Args)), nil
-		},
-	}
+	router := NewRouter()
+	router.Use(UseGlobalId)
+	router.Query("A.B", func() (interface{}, error) {
+		return B{Str8: "Hello"}, nil
+	})
+	router.Query("B.C", func(b B, argsC CArgs, ctx Context1) (interface{}, error) {
+		return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: b.Str8 + *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+	})
+	router.Query("B.Str1", func(p ResolveParams) (interface{}, error) {
+		return &str1, nil
+	})
+	router.Query("C.Bool1", func(p ResolveParams) (interface{}, error) {
+		return bool1, nil
+	})
+	router.Query("C.D", func(p ResolveParams) (interface{}, error) {
 
-	generator := NewGenerator(&routes)
+		return relay.ConnectionFromArray([]interface{}{
+			D{Field1: "c1", Id: "1001"},
+			D{Field1: "c2", Id: "1002"},
+			D{Field1: "c3", Id: "1003"},
+		}, relay.NewConnectionArguments(p.Params.Args)), nil
+	})
+
+	generator := NewGenerator(router)
 	obj := generator.GenerateObject(A{})
 	if obj.Name() != "A" {
 		t.Fatal("Invalid name for graphql object, expected A")
@@ -222,13 +216,13 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	if output.B.C.D.Edges[2].Node.Field1 != "c3" {
 		t.Fatal("Invalid value output.B.C.D.Edges[2].Node.Field1, expected c3, has " + output.B.C.D.Edges[2].Node.Field1)
 	}
-	log.Println(output.B.C.D.Edges[1].Node)
+
 	if output.B.C.D.Edges[1].Node.Id != relay.ToGlobalID("D", "1002") {
 		t.Fatal("Invalid global id value output.B.C.D.Edges[0].Node.Id, expected " + relay.ToGlobalID("D", "1001") + ", has " + output.B.C.D.Edges[0].Node.Id)
 	}
 
 	//Check args
-	if output.B.C.Str2 != "token1context1value" {
+	if output.B.C.Str2 != "Hellotoken1context1value" {
 		t.Fatal("Invalid provide args, expected output.B.C.Str2 to be token1, has " + output.B.C.Str2)
 	}
 
