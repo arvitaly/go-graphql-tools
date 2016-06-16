@@ -1,15 +1,16 @@
 package tools
 
 import (
+	"encoding/json"
 	"errors"
-	"log"
+
 	"reflect"
 
 	"golang.org/x/net/context"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/ast"
 )
-import "github.com/graphql-go/graphql/language/ast"
 
 const (
 	ArgTypeParams  = 1
@@ -98,7 +99,7 @@ func (r *Router) Resolve(fieldInfo FieldInfo, p graphql.ResolveParams) (interfac
 		}
 	}
 
-	if p.Info.Operation.GetOperation() == ast.OperationTypeQuery {
+	if p.Info.Operation.GetOperation() != ast.OperationTypeSubscription {
 		res, err := r.ResolveQuery(fieldInfo, p)
 		if err != nil {
 			return nil, err
@@ -149,10 +150,16 @@ func (r *Router) ResolveQuery(fieldInfo FieldInfo, p graphql.ResolveParams) (int
 
 	var args interface{}
 	if fieldInfo.Args != nil {
-		args = getArgsForResolve(p.Args, reflect.TypeOf(fieldInfo.Args)).Interface()
-		log.Println(fieldInfo.Name, fieldInfo.Args, args)
+		//args = getArgsForResolve(p.Args, reflect.TypeOf(fieldInfo.Args)).Interface()
+		outArgs := reflect.New(reflect.TypeOf(fieldInfo.Args))
+
+		err := MapToStruct(p.Args, outArgs.Interface())
+		if err != nil {
+			return nil, errors.New("Invalid args " + err.Error())
+		}
+
+		args = outArgs.Elem().Interface()
 	} else {
-		log.Println(fieldInfo.Name, fieldInfo.Args)
 		args = nil
 	}
 
@@ -182,7 +189,6 @@ func (r *Router) ResolveQuery(fieldInfo FieldInfo, p graphql.ResolveParams) (int
 
 				argsCall = append(argsCall, reflect.ValueOf(map[string]interface{}{}))
 			} else {
-				log.Println(777)
 				argsCall = append(argsCall, reflect.ValueOf(args))
 			}
 
@@ -192,7 +198,7 @@ func (r *Router) ResolveQuery(fieldInfo FieldInfo, p graphql.ResolveParams) (int
 			argsCall = append(argsCall, contextCall)
 			break
 		case ArgTypeParams:
-			log.Println("MMMM", params.Args)
+
 			argsCall = append(argsCall, reflect.ValueOf(params))
 			break
 		}
@@ -205,6 +211,18 @@ func (r *Router) ResolveQuery(fieldInfo FieldInfo, p graphql.ResolveParams) (int
 	}
 
 	return resValue[0].Interface(), nil
+}
+
+func MapToStruct(input interface{}, output interface{}) error {
+	b, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(b, output)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func getArgsForResolve(args map[string]interface{}, typ reflect.Type) reflect.Value {
@@ -222,6 +240,7 @@ func getArgsForResolve(args map[string]interface{}, typ reflect.Type) reflect.Va
 					if v.Type().Kind() == reflect.Ptr {
 						field.Set(v)
 					} else {
+
 						field.Set(reflect.New(field.Type().Elem()))
 						field.Elem().Set(v)
 					}
@@ -256,6 +275,9 @@ type UseFn func(params ResolveParams) (interface{}, bool, error)
 
 func (r *Router) Use(fn UseFn) {
 	r.uses = append(r.uses, fn)
+}
+func (r *Router) Mutation(name string, handle interface{}) {
+
 }
 func (r *Router) Query(path string, handle interface{}) {
 	handleType := reflect.TypeOf(handle)

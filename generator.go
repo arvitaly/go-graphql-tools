@@ -85,7 +85,7 @@ func (generator *Generator) _GenerateGraphqlObject(source interface{}) graphql.O
 		var fieldType = field.Type
 		var fieldName = field.Name
 
-		graphqlField.Type = generator.getGraphQLType(fieldType, graphqlTagType)
+		graphqlField.Type = generator.getGraphQLType(fieldType, graphqlTagType, fieldName)
 
 		if graphqlField.Type == nil {
 			continue
@@ -127,9 +127,27 @@ func (generator *Generator) _GenerateGraphqlObject(source interface{}) graphql.O
 		}*/
 
 		graphqlField.Name = lA(fieldName)
+		descriptionTag := sourceType.Field(i).Tag.Get("description")
+		if descriptionTag == "-" {
+			graphqlField.Description = ""
+		} else {
+			if descriptionTag == "" {
+				graphqlField.Description = fieldName
+			} else {
+				graphqlField.Description = descriptionTag
+			}
+		}
+
 		if field.Anonymous {
 			IsInterface = false
-			graphqlInterfaces = append(graphqlInterfaces, graphqlField.Type.(*graphql.Interface))
+			switch graphqlField.Type.(type) {
+			case *graphql.Interface:
+				graphqlInterfaces = append(graphqlInterfaces, graphqlField.Type.(*graphql.Interface))
+				break
+			default:
+				panic("Invalid interface for type " + sourceType.Name() + ", " + field.Name + " is not interface")
+			}
+
 		} else {
 			graphqlFields[lA(fieldName)] = graphqlField
 		}
@@ -176,22 +194,66 @@ func (generator *Generator) getArgs(sourceValue reflect.Value) graphql.FieldConf
 		if !sourceValue.Field(i).CanInterface() {
 			continue
 		}
+
+		description := field.Name
+		descriptionTag := field.Tag.Get("description")
+		if descriptionTag == "-" {
+			description = ""
+		} else {
+			if descriptionTag != "" {
+				description = descriptionTag
+			}
+		}
+
 		args[lA(field.Name)] = &graphql.ArgumentConfig{
-			Type:         generator.getGraphQLType(field.Type, field.Tag.Get("graphql")),
-			Description:  field.Name,
+			Type:         generator.getGraphQLType(field.Type, field.Tag.Get("graphql"), field.Name),
+			Description:  description,
 			DefaultValue: sourceValue.Field(i).Interface(),
 		}
 	}
 	return args
 }
-func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagType string) graphql.Output {
+func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagType string, fieldName string) graphql.Output {
 	types := generator.Types
-	if graphqlTagType == "globalid" {
-		return graphql.ID
+
+	fieldKind := fieldType.Kind()
+	var isNull = false
+	if fieldKind == reflect.Ptr {
+		isNull = true
+		fieldKind = fieldType.Elem().Kind()
+		fieldType = fieldType.Elem()
 	}
 	if graphqlTagType == "id" {
-		return graphql.ID
+		if isNull {
+			return graphql.ID
+		} else {
+			return graphql.NewNonNull(graphql.ID)
+		}
+
 	}
+	if graphqlTagType == "input" {
+		var configInput = graphql.InputObjectConfig{}
+
+		inputType := generator._GenerateGraphqlObject(reflect.New(fieldType).Elem().Interface())
+		configInput.Name = inputType.Name()
+		configInput.Description = fieldName
+		inputFields := graphql.InputObjectConfigFieldMap{}
+		for key, value := range inputType.(*graphql.Object).Fields() {
+			inputFields[key] = &graphql.InputObjectFieldConfig{
+				Type: value.Type,
+			}
+		}
+		configInput.Fields = inputFields
+
+		typ := graphql.NewInputObject(configInput)
+
+		if isNull {
+			return typ
+		} else {
+			return graphql.NewNonNull(typ)
+		}
+	}
+
 	if graphqlTagType == "enum" {
 		var configMap = graphql.EnumValueConfigMap{}
 
@@ -201,19 +263,16 @@ func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagTyp
 				configMap[key.String()] = &graphql.EnumValueConfig{Value: res[0].MapIndex(key).Interface()}
 			}
 		}
-		return graphql.NewEnum(graphql.EnumConfig{
+		typ := graphql.NewEnum(graphql.EnumConfig{
 			Name:   fieldType.Name(),
 			Values: configMap})
+		if isNull {
+			return typ
+		} else {
+			return graphql.NewNonNull(typ)
+		}
 
 	}
-	fieldKind := fieldType.Kind()
-	var isNull = false
-	if fieldKind == reflect.Ptr {
-		isNull = true
-		fieldKind = fieldType.Elem().Kind()
-		fieldType = fieldType.Elem()
-	}
-
 	kind := fieldType.Kind()
 	if kind == reflect.Struct {
 
@@ -234,7 +293,7 @@ func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagTyp
 	case reflect.Bool:
 		graphqlType = graphql.Boolean
 	case reflect.Slice:
-		t := generator.getGraphQLType(fieldType.Elem(), graphqlTagType)
+		t := generator.getGraphQLType(fieldType.Elem(), graphqlTagType, fieldName)
 		graphqlType = graphql.NewList(t)
 	default:
 
@@ -247,107 +306,6 @@ func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagTyp
 	}
 	return graphqlType
 }
-
-/*func getResolveFunc(sourceType reflect.Type, fun reflect.Value) func(p graphql.ResolveParams) (interface{}, error) {
-	funcArgsTypes := []string{"", "", "", ""}
-	funArgsNum := fun.Type().NumIn()
-	if funArgsNum == 0 {
-		panic("Invalid resolve func, expected 1 parameter to be graphql.ResolveParams or " + sourceType.Name())
-	}
-	if fun.Type().In(0) == reflect.TypeOf(graphql.ResolveParams{}) {
-		funcArgsTypes[0] = "params"
-	} else {
-		funcArgsTypes[0] = "obj"
-	}
-	if funArgsNum > 1 {
-		if fun.Type().In(1) == reflect.TypeOf(graphql.ResolveParams{}) {
-			funcArgsTypes[1] = "params"
-		} else {
-			funcArgsTypes[1] = "args"
-		}
-	}
-	if funArgsNum > 2 {
-		funcArgsTypes[2] = "context"
-	}
-	return func(p graphql.ResolveParams) (interface{}, error) {
-		var source reflect.Value
-		if reflect.TypeOf(p.Source).Kind() == reflect.Map {
-			source = reflect.New(sourceType).Elem()
-		} else {
-			source = reflect.ValueOf(p.Source)
-		}
-
-		argumentsForCall := []reflect.Value{}
-		for _, funcArgsType := range funcArgsTypes {
-			switch funcArgsType {
-			case "params":
-				argumentsForCall = append(argumentsForCall, reflect.ValueOf(p))
-				break
-			case "obj":
-				argumentsForCall = append(argumentsForCall, source)
-				break
-			case "args":
-				argumentsForCall = append(argumentsForCall, getArgsForResolve(p.Args, fun.Type().In(1)))
-				break
-			case "context":
-				argumentsForCall = append(argumentsForCall, getContextForResolve(p.Context, fun.Type().In(2)))
-				break
-			}
-		}
-
-		values := fun.Call(argumentsForCall)
-		if len(values) != 2 {
-			panic("Resolve func should return 2 values: interface{}, error")
-		}
-		err := values[1].Interface()
-
-		var ret interface{}
-		retType := values[0].Type()
-		if values[0].Kind() == reflect.Struct {
-
-			ret2 := map[string]interface{}{}
-			for i := 0; i < retType.NumField(); i++ {
-
-				//Check for exported field
-				if !values[0].Field(i).CanInterface() {
-					continue
-				}
-
-				if retType.Field(i).Type.Kind() == reflect.Ptr {
-
-					if !values[0].Field(i).IsNil() {
-
-						ret2[lA(retType.Field(i).Name)] = values[0].Field(i).Elem().Interface()
-					}
-
-				} else {
-
-					ret2[lA(retType.Field(i).Name)] = values[0].Field(i).Interface()
-
-				}
-
-			}
-			ret = ret2
-
-		} else {
-
-			if values[0].Kind() == reflect.Ptr {
-				ret = values[0].Elem().Interface()
-			} else {
-				ret = values[0].Interface()
-			}
-
-		}
-
-		if err == nil {
-			return ret, nil
-		} else {
-
-			return ret, values[1].Interface().(error)
-		}
-
-	}
-}*/
 
 func lA(s string) string {
 	a := []rune(s)
