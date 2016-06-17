@@ -6,9 +6,12 @@ Based on https://github.com/graphql-go/graphql library
 
 [![Build Status](https://travis-ci.org/arvitaly/gopherjs-electron.svg?branch=master)](https://travis-ci.org/arvitaly/go-graphql-schema-generator)
 
-# Example of Star Wars, based on https://github.com/facebook/relay/blob/master/examples/star-wars/data/schema.js
+# Example
 
-Query's example
+Star Wars, based on https://github.com/facebook/relay/blob/master/examples/star-wars/data/schema.js
+
+## Query's example
+
 	query Q1{ 
 			rebels{
 				id 
@@ -27,7 +30,7 @@ Query's example
 				name
 			}				 
 		}
-Mutation's example
+## Mutation's example
 	mutation M1{ introduceShip(input:{shipName:"New shippy"}){
 		ship{
 			id
@@ -35,7 +38,7 @@ Mutation's example
 		}
 	} }	
 
-Schema declaration
+## Schema declaration
 
 	type Node struct {
 		Id string `json:"id" "graphql:id"`
@@ -107,7 +110,7 @@ Schema declaration
 		return MutationIntroduceShipArgs{}
 	}
 
-Resolve
+## Resolve
 
 	router.Query("Query.Rebels", func(query Query) (Faction, error) {
 		return GetFaction("1"), nil
