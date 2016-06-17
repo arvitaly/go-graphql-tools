@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/arvitaly/go-graphql-tools/test"
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/relay"
 	"golang.org/x/net/context"
@@ -42,18 +43,17 @@ var Enum1Value2 Enum1 = 2
 var Enum1Value3 Enum1 = 3
 
 type C struct {
-	Id      int                    `json:"id,string" graphql:"ID"`
-	Ignore1 string                 `graphql:"-"`
-	Str2    string                 `json:"str2"`
-	Int1    int                    `json:"int1"`
-	Float1  float64                `json:"float1"`
-	Bool1   bool                   `json:"bool1"`
-	Int2    *int                   `json:"int2"`
-	Int3    *int                   `json:"int3"`
-	Arr1    *[]string              `json:"arr1"`
-	Map1    map[string]interface{} `json:"map1"`
-	D       DConnection            `json:"d"`
-	Enum1   Enum1                  `json:"enum1,string" graphql:"enum"`
+	test.C
+	Id      int    `json:"id,string" graphql:"ID"`
+	Ignore1 string `graphql:"-"`
+
+	Bool1 bool                   `json:"bool1"`
+	Int2  *int                   `json:"int2"`
+	Int3  *int                   `json:"int3"`
+	Arr1  *[]string              `json:"arr1"`
+	Map1  map[string]interface{} `json:"map1"`
+	D     DConnection            `json:"d"`
+	Enum1 Enum1                  `json:"enum1,string" graphql:"enum"`
 }
 
 func (e *Enum1) UnmarshalJSON(b []byte) error {
@@ -79,7 +79,7 @@ func (n Node) IsInterface() bool {
 }
 
 type D struct {
-	Node
+	Node   `graphql:"interface"`
 	Id     string `json:"id" graphql:"id" resolve:"globalid"`
 	Field1 string `json:"field1"`
 }
@@ -112,7 +112,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 		return B{Str8: "Hello"}, nil
 	})
 	router.Query("B.C", func(b B, argsC CArgs, ctx Context1) (interface{}, error) {
-		return C{Enum1: Enum1Value1, Id: 13, Int1: int1, Float1: float1, Str2: b.Str8 + *argsC.Token + ctx.Context1, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+		return C{Enum1: Enum1Value1, Id: 13, C: test.C{Int1: int1, Float1: float1, Str2: b.Str8 + *argsC.Token + ctx.Context1}, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
 	})
 	router.Query("B.Str1", func(p ResolveParams) (interface{}, error) {
 		return &str1, nil

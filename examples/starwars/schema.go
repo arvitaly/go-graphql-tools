@@ -68,7 +68,7 @@ func (n Node) IsInterface() bool {
 }
 
 type Faction struct {
-	Node
+	Node  `graphql:"interface"`
 	Id    string         `json:"id" "graphql:id"`
 	Name  string         `json:"name"`
 	Ships ShipConnection `json:"ships"`

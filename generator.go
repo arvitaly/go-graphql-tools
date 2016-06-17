@@ -29,9 +29,6 @@ func (generator *Generator) Generate(typ interface{}) interface{} {
 func (generator *Generator) GenerateObject(typ interface{}) *graphql.Object {
 	return generator.Generate(typ).(*graphql.Object)
 }
-func (generator *Generator) generateInterface() {
-
-}
 
 type FieldInfo struct {
 	Name       string
@@ -39,6 +36,107 @@ type FieldInfo struct {
 	Source     interface{}
 	Args       interface{}
 	ResolveTag string
+}
+
+//Generate graphql fields and interface by fields of struct
+func (generator *Generator) getFields(source interface{}, sourceType reflect.Type) (graphql.Fields, []*graphql.Interface) {
+	var graphqlFields = graphql.Fields{} //init graphql fields
+	var graphqlInterfaces = []*graphql.Interface{}
+
+	for i := 0; i < sourceType.NumField(); i++ {
+		field := sourceType.Field(i)
+
+		//Get graphql tag for field
+		var sourceFieldGraphqlTag = field.Tag.Get("graphql")
+
+		////Exclude field
+		if sourceFieldGraphqlTag == "-" {
+			continue
+		}
+		//////
+
+		fieldType := field.Type
+
+		if field.Anonymous && sourceFieldGraphqlTag == "" {
+			graphqlFieldsExt, graphqlInterfacesExt := generator.getFields(reflect.ValueOf(source).Field(i).Interface(), fieldType)
+
+			for key, value := range graphqlFieldsExt {
+				graphqlFields[key] = value
+			}
+			for _, value := range graphqlInterfacesExt {
+				graphqlInterfaces = append(graphqlInterfaces, value)
+			}
+
+		} else {
+
+			sourceFieldGraphqlTagParams := strings.Split(sourceFieldGraphqlTag, ",")
+			var graphqlTagType string
+			if len(sourceFieldGraphqlTagParams) > 0 {
+				graphqlTagType = strings.ToLower(sourceFieldGraphqlTagParams[0])
+			}
+
+			//init new field
+			var graphqlField = &graphql.Field{}
+
+			//
+
+			var fieldName = field.Name
+
+			graphqlField.Type = generator.getGraphQLType(fieldType, graphqlTagType, fieldName)
+
+			if graphqlField.Type == nil {
+				continue
+			}
+			///Args
+			var argsI interface{} = nil
+			if method, ok := sourceType.MethodByName("ArgsFor" + fieldName); ok {
+				args := method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0]
+				graphqlField.Args = generator.getArgs(args)
+				argsI = args.Interface()
+			}
+
+			//Resolve
+			resolveTag := sourceType.Field(i).Tag.Get("resolve")
+			if generator.Resolver != nil && generator.Resolver.IsResolve(sourceType, field) {
+				fieldInfo := FieldInfo{
+					Name:       fieldName,
+					Type:       fieldType,
+					Source:     source,
+					Args:       argsI,
+					ResolveTag: resolveTag,
+				}
+				graphqlField.Resolve = func(p graphql.ResolveParams) (interface{}, error) {
+					return generator.Resolver.Resolve(fieldInfo, p)
+				}
+			}
+
+			graphqlField.Name = lA(fieldName)
+			descriptionTag := sourceType.Field(i).Tag.Get("description")
+			if descriptionTag == "-" {
+				graphqlField.Description = ""
+			} else {
+				if descriptionTag == "" {
+					graphqlField.Description = fieldName
+				} else {
+					graphqlField.Description = descriptionTag
+				}
+			}
+
+			if sourceFieldGraphqlTag == "interface" {
+				switch graphqlField.Type.(type) {
+				case *graphql.Interface:
+					graphqlInterfaces = append(graphqlInterfaces, graphqlField.Type.(*graphql.Interface))
+					break
+				default:
+					panic("Invalid interface for type " + sourceType.Name() + ", " + field.Name + " is not interface, " + graphqlField.Type.String())
+				}
+
+			} else {
+				graphqlFields[lA(fieldName)] = graphqlField
+			}
+		}
+	}
+	return graphqlFields, graphqlInterfaces
 }
 
 func (generator *Generator) _GenerateGraphqlObject(source interface{}) graphql.Output {
@@ -64,104 +162,18 @@ func (generator *Generator) _GenerateGraphqlObject(source interface{}) graphql.O
 	}
 
 	//get fields
-	var graphqlFields = graphql.Fields{} //init graphql fields
-	var graphqlInterfaces = []*graphql.Interface{}
-	for i := 0; i < sourceType.NumField(); i++ {
-		var sourceFieldGraphqlTag = sourceType.Field(i).Tag.Get("graphql")
-		if sourceFieldGraphqlTag == "-" {
-			continue
-		}
-		sourceFieldGraphqlTagParams := strings.Split(sourceFieldGraphqlTag, ",")
-		var graphqlTagType string
-		if len(sourceFieldGraphqlTagParams) > 0 {
-			graphqlTagType = strings.ToLower(sourceFieldGraphqlTagParams[0])
-		}
-
-		//init new field
-		var graphqlField = &graphql.Field{}
-
-		//
-		var field = sourceType.Field(i)
-		var fieldType = field.Type
-		var fieldName = field.Name
-
-		graphqlField.Type = generator.getGraphQLType(fieldType, graphqlTagType, fieldName)
-
-		if graphqlField.Type == nil {
-			continue
-		}
-		/*if graphqlTagType == "globalid" {
-			graphqlField.Resolve = getGlobalIdResolveFunc(sourceType.Name(), fieldName)
-		}*/
-
-		/*if method, ok := sourceType.MethodByName("Resolve" + fieldName); ok {
-			graphqlField.Resolve = getResolveFunc(sourceType, method.Func)
-		}*/
-
-		///Args
-		var argsI interface{} = nil
-		if method, ok := sourceType.MethodByName("ArgsFor" + fieldName); ok {
-			args := method.Func.Call([]reflect.Value{reflect.ValueOf(source)})[0]
-			graphqlField.Args = generator.getArgs(args)
-			argsI = args.Interface()
-		}
-
-		//Resolve
-		resolveTag := sourceType.Field(i).Tag.Get("resolve")
-		if generator.Resolver != nil && generator.Resolver.IsResolve(sourceType, field) {
-			fieldInfo := FieldInfo{
-				Name:       fieldName,
-				Type:       fieldType,
-				Source:     source,
-				Args:       argsI,
-				ResolveTag: resolveTag,
-			}
-			graphqlField.Resolve = func(p graphql.ResolveParams) (interface{}, error) {
-				return generator.Resolver.Resolve(fieldInfo, p)
-			} //getResolveFunc(sourceType, reflect.ValueOf(route)) // getResolveFunc(sourceType, reflect.ValueOf(route))
-		}
-
-		/*if route, ok := routes[name+"."+fieldName]; ok || resolveTag != "" {
-
-
-		}*/
-
-		graphqlField.Name = lA(fieldName)
-		descriptionTag := sourceType.Field(i).Tag.Get("description")
-		if descriptionTag == "-" {
-			graphqlField.Description = ""
-		} else {
-			if descriptionTag == "" {
-				graphqlField.Description = fieldName
-			} else {
-				graphqlField.Description = descriptionTag
-			}
-		}
-
-		if field.Anonymous {
-			IsInterface = false
-			switch graphqlField.Type.(type) {
-			case *graphql.Interface:
-				graphqlInterfaces = append(graphqlInterfaces, graphqlField.Type.(*graphql.Interface))
-				break
-			default:
-				panic("Invalid interface for type " + sourceType.Name() + ", " + field.Name + " is not interface")
-			}
-
-		} else {
-			graphqlFields[lA(fieldName)] = graphqlField
-		}
-
-	}
+	graphqlFields, graphqlInterfaces := generator.getFields(source, sourceType)
 
 	config := graphql.ObjectConfig{
 		Name:        name,
 		Description: description,
 	}
 	if len(graphqlFields) > 0 {
+
 		config.Fields = graphqlFields
 	}
 	if len(graphqlInterfaces) > 0 {
+		IsInterface = false
 		config.Interfaces = graphqlInterfaces
 	}
 

@@ -5,3 +5,4 @@ script:
     - go get
     - go install
     - go test
+    - go test ./...

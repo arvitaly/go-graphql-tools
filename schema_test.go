@@ -16,7 +16,7 @@ type Query struct {
 	B    NodeI
 }
 type NodeI struct {
-	Node
+	Node `graphql:"interface"`
 	Id   string `json:"id" graphql:"id"`
 	Name string
 }
