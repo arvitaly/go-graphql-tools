@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/graphql-go/graphql"
+	"github.com/arvitaly/graphql"
 )
 
 type Resolver interface {

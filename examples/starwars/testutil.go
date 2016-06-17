@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/arvitaly/go-graphql-tools"
-	"github.com/graphql-go/graphql"
+	"github.com/arvitaly/graphql"
 	"github.com/graphql-go/graphql/testutil"
 )
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/arvitaly/go-graphql-tools/test"
-	"github.com/graphql-go/graphql"
+	"github.com/arvitaly/graphql"
 	"github.com/graphql-go/relay"
 	"golang.org/x/net/context"
 )

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/graphql-go/graphql"
+	"github.com/arvitaly/graphql"
 	"github.com/graphql-go/graphql/testutil"
 )
 

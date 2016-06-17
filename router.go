@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/graphql-go/graphql"
+	"github.com/arvitaly/graphql"
 	"github.com/graphql-go/graphql/language/ast"
 )
 

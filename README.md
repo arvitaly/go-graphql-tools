@@ -4,11 +4,11 @@
 
 Based on https://github.com/graphql-go/graphql library
 
-[![Build Status](https://travis-ci.org/arvitaly/gopherjs-electron.svg?branch=master)](https://travis-ci.org/arvitaly/go-graphql-schema-generator)
+[![Build Status](https://travis-ci.org/arvitaly/go-graphql-tools.svg?branch=master)](https://travis-ci.org/arvitaly/go-graphql-tools)
 
 # Example
 
-Star Wars, based on https://github.com/facebook/relay/blob/master/examples/star-wars/data/schema.js
+Star Wars, based on https://github.com/facebook/relay/blob/master/examples/star-wars/
 
 ## Query's example
 
