@@ -79,6 +79,14 @@ func (r *Router) IsResolve(sourceType reflect.Type, field reflect.StructField) b
 /**
 **/
 func (r *Router) SourceForResolve(fieldInfo FieldInfo, p graphql.ResolveParams) (interface{}, error) {
+	if reflect.TypeOf(p.Source).Kind() == reflect.Map {
+		sourceType := reflect.TypeOf(fieldInfo.Source)
+		if sourceType.Kind() == reflect.Ptr {
+			return reflect.New(sourceType).Interface(), nil
+		} else {
+			return reflect.New(sourceType).Elem().Interface(), nil
+		}
+	}
 	return p.Source, nil
 	sourceType := reflect.TypeOf(fieldInfo.Source)
 	sourceValueType := reflect.TypeOf(p.Source)
