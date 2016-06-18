@@ -3,13 +3,12 @@ package tools
 import (
 	"encoding/json"
 	"errors"
-
+	"log"
 	"reflect"
-
-	"golang.org/x/net/context"
 
 	"github.com/arvitaly/graphql"
 	"github.com/graphql-go/graphql/language/ast"
+	"golang.org/x/net/context"
 )
 
 const (
@@ -55,6 +54,7 @@ func (r *Router) Routes() map[string]interface{} {
 func (r *Router) IsResolve(sourceType reflect.Type, field reflect.StructField) bool {
 	path := sourceType.Name() + "." + field.Name
 	if _, ok := r.queries[path]; ok {
+
 		return true
 	}
 	if field.Tag.Get("resolve") != "" {
@@ -62,8 +62,11 @@ func (r *Router) IsResolve(sourceType reflect.Type, field reflect.StructField) b
 	}
 	return false
 }
-func (r *Router) Resolve(fieldInfo FieldInfo, p graphql.ResolveParams) (interface{}, error) {
 
+/**
+**/
+func (r *Router) SourceForResolve(fieldInfo FieldInfo, p graphql.ResolveParams) (interface{}, error) {
+	return p.Source, nil
 	sourceType := reflect.TypeOf(fieldInfo.Source)
 	sourceValueType := reflect.TypeOf(p.Source)
 	//Change ptr to elem
@@ -72,19 +75,33 @@ func (r *Router) Resolve(fieldInfo FieldInfo, p graphql.ResolveParams) (interfac
 	}
 	var source interface{}
 	//Check type of source
-	if sourceValueType.Kind() != reflect.Struct {
-		if sourceValueType.Kind() == reflect.Map {
-
-			source = reflect.New(sourceType).Elem().Interface()
-		} else {
-			return nil, InvalidSourceError{RouterError{Text: "Source for resolve query should be struct or pointer to struct, has " + sourceType.Kind().String()}}
-		}
+	//log.Println("AAAAAAAAAAAA", sourceValueType.Name(), sourceValueType.Kind(), p.Source)
+	if sourceValueType.Kind() == reflect.Ptr {
+		source = reflect.ValueOf(p.Source).Elem().Interface()
+		log.Println("AAAAAAAAAAAAAAAAAAAAAAA", source)
 	} else {
-		source = p.Source
+		if sourceValueType.Kind() != reflect.Struct {
+			if sourceValueType.Kind() == reflect.Map {
+
+				source = reflect.New(sourceType).Elem().Interface()
+			} else {
+				return nil, InvalidSourceError{RouterError{Text: "Source for resolve query should be struct or pointer to struct, has " + sourceValueType.Name()}}
+			}
+		} else {
+			source = p.Source
+		}
+	}
+	return source, nil
+}
+
+func (r *Router) Resolve(fieldInfo FieldInfo, p graphql.ResolveParams) (interface{}, error) {
+
+	source, err := r.SourceForResolve(fieldInfo, p)
+	if err != nil {
+		return nil, err
 	}
 
 	for _, useFn := range r.uses {
-
 		res, next, err := useFn(ResolveParams{
 			FieldInfo: fieldInfo,
 			Params:    p,
@@ -98,54 +115,29 @@ func (r *Router) Resolve(fieldInfo FieldInfo, p graphql.ResolveParams) (interfac
 			return res, nil
 		}
 	}
-
 	if p.Info.Operation.GetOperation() != ast.OperationTypeSubscription {
+
 		res, err := r.ResolveQuery(fieldInfo, p)
 		if err != nil {
 			return nil, err
 		}
-		/*retType := reflect.TypeOf(res)
-		ret := reflect.ValueOf(res)
-		if retType.Kind() != reflect.Struct {
-			if retType.Kind() == reflect.Ptr {
-				res = ret.Elem().Interface()
-			}
-		}*/
 		return res, nil
 	}
 
 	return nil, errors.New("Unsupported resolve")
 }
 func (r *Router) ResolveQuery(fieldInfo FieldInfo, p graphql.ResolveParams) (interface{}, error) {
-	sourceType := reflect.TypeOf(fieldInfo.Source)
-	sourceValueType := reflect.TypeOf(p.Source)
-	//Change ptr to elem
-	if sourceType.Kind() == reflect.Ptr {
-		sourceType = sourceType.Elem()
-	}
-	var source interface{}
-	//Check type of source
-	if sourceValueType.Kind() != reflect.Struct {
-		if sourceValueType.Kind() == reflect.Map {
-
-			source = reflect.New(sourceType).Elem().Interface()
-		} else {
-			return nil, InvalidSourceError{RouterError{Text: "Source for resolve query should be struct or pointer to struct, has " + sourceType.Kind().String()}}
-		}
-	} else {
-		source = p.Source
+	source, err := r.SourceForResolve(fieldInfo, p)
+	if err != nil {
+		return nil, err
 	}
 
-	sourceTypeName := sourceType.Name()
+	sourceType := reflect.TypeOf(source)
 
-	sourceFieldName := lU(p.Info.FieldName)
-
-	path := sourceTypeName + "." + sourceFieldName
-
-	query, ok := r.queries[path]
+	query, ok := r.queries[fieldInfo.Path]
 
 	if !ok {
-		return nil, NotFoundRoute{RouterError{Text: "Not found route for path " + path}}
+		return nil, NotFoundRoute{RouterError{Text: "Not found route for path " + fieldInfo.Path + " by source " + sourceType.Name() + "," + sourceType.Kind().String()}}
 	}
 
 	var args interface{}

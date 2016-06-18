@@ -29,7 +29,7 @@ func TestResolveQuery(t *testing.T) {
 			},
 		},
 	}
-	res, err := router.Resolve(FieldInfo{Source: X{}}, graphqlParams)
+	res, err := router.Resolve(FieldInfo{Source: X{}, Path: "X.Y"}, graphqlParams)
 	if err != nil {
 		t.Fatalf("Invalid result, error not nil, has %v", err)
 	}

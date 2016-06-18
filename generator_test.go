@@ -78,10 +78,14 @@ func (n Node) IsInterface() bool {
 	return true
 }
 
-type D struct {
-	Node   `graphql:"interface"`
-	Id     string `json:"id" graphql:"id" resolve:"globalid"`
+type DExt struct {
 	Field1 string `json:"field1"`
+	Id     uint   `json:"id"`
+}
+type D struct {
+	DExt
+	Node `graphql:"interface"`
+	Id   string `json:"id" graphql:"id" resolve:"globalid"`
 }
 type DConnection struct {
 	Edges []DConnectionEdge
@@ -112,7 +116,7 @@ func TestGenerateGraphqlObject(t *testing.T) {
 		return B{Str8: "Hello"}, nil
 	})
 	router.Query("B.C", func(b B, argsC CArgs, ctx Context1) (interface{}, error) {
-		return C{Enum1: Enum1Value1, Id: 13, C: test.C{Int1: int1, Float1: float1, Str2: b.Str8 + *argsC.Token + ctx.Context1}, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+		return C{Enum1: Enum1Value1, Id: 13, C: test.C{test.CExt{Int1: int1, Float1: float1, Str2: b.Str8 + *argsC.Token + ctx.Context1}}, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
 	})
 	router.Query("B.Str1", func(p ResolveParams) (interface{}, error) {
 		return &str1, nil
@@ -123,9 +127,9 @@ func TestGenerateGraphqlObject(t *testing.T) {
 	router.Query("C.D", func(p ResolveParams) (interface{}, error) {
 
 		return relay.ConnectionFromArray([]interface{}{
-			D{Field1: "c1", Id: "1001"},
-			D{Field1: "c2", Id: "1002"},
-			D{Field1: "c3", Id: "1003"},
+			D{Id: "1001", DExt: DExt{Field1: "c1", Id: 1001}},
+			D{Id: "1002", DExt: DExt{Field1: "c2", Id: 1002}},
+			D{Id: "1003", DExt: DExt{Field1: "c3", Id: 1003}},
 		}, relay.NewConnectionArguments(p.Params.Args)), nil
 	})
 

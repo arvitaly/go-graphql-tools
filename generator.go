@@ -36,10 +36,20 @@ type FieldInfo struct {
 	Source     interface{}
 	Args       interface{}
 	ResolveTag string
+	Path       string
+}
+
+type _GetFieldsParams struct {
+	Source         interface{}
+	SourceType     reflect.Type
+	RootSource     interface{}
+	RootSourceType reflect.Type
 }
 
 //Generate graphql fields and interface by fields of struct
-func (generator *Generator) getFields(source interface{}, sourceType reflect.Type) (graphql.Fields, []*graphql.Interface) {
+func (generator *Generator) getFields(getFieldsParams _GetFieldsParams) (graphql.Fields, []*graphql.Interface) {
+	sourceType := getFieldsParams.SourceType
+	source := getFieldsParams.Source
 	var graphqlFields = graphql.Fields{} //init graphql fields
 	var graphqlInterfaces = []*graphql.Interface{}
 
@@ -58,7 +68,12 @@ func (generator *Generator) getFields(source interface{}, sourceType reflect.Typ
 		fieldType := field.Type
 
 		if field.Anonymous && sourceFieldGraphqlTag == "" {
-			graphqlFieldsExt, graphqlInterfacesExt := generator.getFields(reflect.ValueOf(source).Field(i).Interface(), fieldType)
+			graphqlFieldsExt, graphqlInterfacesExt := generator.getFields(_GetFieldsParams{
+				Source:         reflect.ValueOf(source).Field(i).Interface(),
+				SourceType:     fieldType,
+				RootSource:     getFieldsParams.RootSource,
+				RootSourceType: getFieldsParams.RootSourceType,
+			})
 
 			for key, value := range graphqlFieldsExt {
 				graphqlFields[key] = value
@@ -97,13 +112,14 @@ func (generator *Generator) getFields(source interface{}, sourceType reflect.Typ
 
 			//Resolve
 			resolveTag := sourceType.Field(i).Tag.Get("resolve")
-			if generator.Resolver != nil && generator.Resolver.IsResolve(sourceType, field) {
+			if generator.Resolver != nil && generator.Resolver.IsResolve(getFieldsParams.RootSourceType, field) {
 				fieldInfo := FieldInfo{
 					Name:       fieldName,
 					Type:       fieldType,
-					Source:     source,
+					Source:     getFieldsParams.RootSource,
 					Args:       argsI,
 					ResolveTag: resolveTag,
+					Path:       getFieldsParams.RootSourceType.Name() + "." + fieldName,
 				}
 				graphqlField.Resolve = func(p graphql.ResolveParams) (interface{}, error) {
 					return generator.Resolver.Resolve(fieldInfo, p)
@@ -162,7 +178,12 @@ func (generator *Generator) _GenerateGraphqlObject(source interface{}) graphql.O
 	}
 
 	//get fields
-	graphqlFields, graphqlInterfaces := generator.getFields(source, sourceType)
+	graphqlFields, graphqlInterfaces := generator.getFields(_GetFieldsParams{
+		Source:         source,
+		SourceType:     sourceType,
+		RootSource:     source,
+		RootSourceType: sourceType,
+	})
 
 	config := graphql.ObjectConfig{
 		Name:        name,
