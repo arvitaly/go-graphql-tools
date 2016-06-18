@@ -6,18 +6,6 @@ import (
 	"github.com/graphql-go/relay"
 )
 
-func UseGlobalId(params ResolveParams) (interface{}, bool, error) {
-	if params.FieldInfo.ResolveTag == "globalid" {
-
-		res, err := ResolveGlobalId(params)
-		if err != nil {
-			return nil, false, err
-		}
-
-		return res, false, nil
-	}
-	return nil, true, nil
-}
 func ResolveGlobalId(params ResolveParams) (interface{}, error) {
 	var rawId reflect.Value
 

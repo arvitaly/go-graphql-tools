@@ -108,16 +108,20 @@ type Context1 struct {
 	Context1 string
 }
 
+func (b B) ResolveC(argsC CArgs, ctx Context1) (C, error) {
+	return C{Enum1: Enum1Value1, Id: 13, C: test.C{test.CExt{Int1: int1, Float1: float1, Str2: b.Str8 + *argsC.Token + ctx.Context1}}, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
+}
+
 func TestGenerateGraphqlObject(t *testing.T) {
 
 	router := NewRouter()
-	router.Use(UseGlobalId)
+	router.UseResolve("globalid", ResolveGlobalId)
 	router.Query("A.B", func() (interface{}, error) {
 		return B{Str8: "Hello"}, nil
 	})
-	router.Query("B.C", func(b B, argsC CArgs, ctx Context1) (interface{}, error) {
+	/*router.Query("B.C", func(b B, argsC CArgs, ctx Context1) (interface{}, error) {
 		return C{Enum1: Enum1Value1, Id: 13, C: test.C{test.CExt{Int1: int1, Float1: float1, Str2: b.Str8 + *argsC.Token + ctx.Context1}}, Int3: &intPtr1, Arr1: &[]string{"test"}}, nil
-	})
+	})*/
 	router.Query("B.Str1", func(p ResolveParams) (interface{}, error) {
 		return &str1, nil
 	})

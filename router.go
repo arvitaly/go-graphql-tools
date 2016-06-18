@@ -3,8 +3,8 @@ package tools
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"reflect"
+	"strings"
 
 	"github.com/arvitaly/graphql"
 	"github.com/graphql-go/graphql/language/ast"
@@ -27,8 +27,9 @@ type ResolveParams struct {
 }
 
 type Router struct {
-	queries map[string]RouteParams
-	uses    []UseFn
+	queries  map[string]RouteParams
+	resolves map[string]RouteParams
+	uses     []UseFn
 }
 type RouteParams struct {
 	Args    []int
@@ -38,8 +39,9 @@ type RouteParams struct {
 
 func NewRouter() *Router {
 	router := Router{
-		queries: map[string]RouteParams{},
-		uses:    []UseFn{},
+		queries:  map[string]RouteParams{},
+		resolves: map[string]RouteParams{},
+		uses:     []UseFn{},
 	}
 	return &router
 }
@@ -54,12 +56,23 @@ func (r *Router) Routes() map[string]interface{} {
 func (r *Router) IsResolve(sourceType reflect.Type, field reflect.StructField) bool {
 	path := sourceType.Name() + "." + field.Name
 	if _, ok := r.queries[path]; ok {
+		return true
+	}
+	resolveTag := field.Tag.Get("resolve")
+	if resolveTag != "" {
+		resolveTagParams := strings.Split(resolveTag, ",")
+		if resolve, ok := r.resolves[resolveTagParams[0]]; ok {
+			r.queries[path] = resolve
+			return true
+		}
+	}
 
+	method, ok := sourceType.MethodByName("Resolve" + field.Name)
+	if ok {
+		r.Query(path, method.Func.Interface())
 		return true
 	}
-	if field.Tag.Get("resolve") != "" {
-		return true
-	}
+
 	return false
 }
 
@@ -75,10 +88,9 @@ func (r *Router) SourceForResolve(fieldInfo FieldInfo, p graphql.ResolveParams) 
 	}
 	var source interface{}
 	//Check type of source
-	//log.Println("AAAAAAAAAAAA", sourceValueType.Name(), sourceValueType.Kind(), p.Source)
 	if sourceValueType.Kind() == reflect.Ptr {
 		source = reflect.ValueOf(p.Source).Elem().Interface()
-		log.Println("AAAAAAAAAAAAAAAAAAAAAAA", source)
+
 	} else {
 		if sourceValueType.Kind() != reflect.Struct {
 			if sourceValueType.Kind() == reflect.Map {
@@ -271,7 +283,10 @@ func (r *Router) Use(fn UseFn) {
 func (r *Router) Mutation(name string, handle interface{}) {
 
 }
-func (r *Router) Query(path string, handle interface{}) {
+func (r *Router) UseResolve(name string, handle interface{}) {
+	r.resolves[name] = r.getRouteParams(handle)
+}
+func (r *Router) getRouteParams(handle interface{}) RouteParams {
 	handleType := reflect.TypeOf(handle)
 	if handleType.Kind() != reflect.Func {
 		panic("Invalid query handle, expected func, has " + handleType.Kind().String())
@@ -304,7 +319,11 @@ func (r *Router) Query(path string, handle interface{}) {
 	}
 	params.Handle = handle
 	params.Args = args
-	r.queries[path] = params
+	return params
+}
+func (r *Router) Query(path string, handle interface{}) {
+
+	r.queries[path] = r.getRouteParams(handle)
 }
 
 type RouterError struct {

@@ -31,12 +31,12 @@ func (generator *Generator) GenerateObject(typ interface{}) *graphql.Object {
 }
 
 type FieldInfo struct {
-	Name       string
-	Type       reflect.Type
-	Source     interface{}
-	Args       interface{}
-	ResolveTag string
-	Path       string
+	Name   string
+	Type   reflect.Type
+	Tag    reflect.StructTag
+	Source interface{}
+	Args   interface{}
+	Path   string
 }
 
 type _GetFieldsParams struct {
@@ -111,15 +111,16 @@ func (generator *Generator) getFields(getFieldsParams _GetFieldsParams) (graphql
 			}
 
 			//Resolve
-			resolveTag := sourceType.Field(i).Tag.Get("resolve")
+
 			if generator.Resolver != nil && generator.Resolver.IsResolve(getFieldsParams.RootSourceType, field) {
+
 				fieldInfo := FieldInfo{
-					Name:       fieldName,
-					Type:       fieldType,
-					Source:     getFieldsParams.RootSource,
-					Args:       argsI,
-					ResolveTag: resolveTag,
-					Path:       getFieldsParams.RootSourceType.Name() + "." + fieldName,
+					Name:   fieldName,
+					Type:   fieldType,
+					Tag:    field.Tag,
+					Source: getFieldsParams.RootSource,
+					Args:   argsI,
+					Path:   getFieldsParams.RootSourceType.Name() + "." + fieldName,
 				}
 				graphqlField.Resolve = func(p graphql.ResolveParams) (interface{}, error) {
 					return generator.Resolver.Resolve(fieldInfo, p)
