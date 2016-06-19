@@ -110,7 +110,7 @@ func (generator *Generator) getFields(getFieldsParams _GetFieldsParams) (graphql
 				argsI = args.Interface()
 			}
 
-			//Resolve
+			//Resolve check
 
 			if generator.Resolver != nil && generator.Resolver.IsResolve(getFieldsParams.RootSourceType, field) {
 
