@@ -267,8 +267,15 @@ func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagTyp
 	}
 	if graphqlTagType == "input" {
 		var configInput = graphql.InputObjectConfig{}
+		var inputType graphql.Output
+		switch fieldKind {
+		case reflect.Slice:
+			inputType = generator._GenerateGraphqlObject(reflect.New(fieldType.Elem()).Elem().Interface())
+		default:
 
-		inputType := generator._GenerateGraphqlObject(reflect.New(fieldType).Elem().Interface())
+			inputType = generator._GenerateGraphqlObject(reflect.New(fieldType).Elem().Interface())
+
+		}
 		configInput.Name = inputType.Name()
 		configInput.Description = fieldName
 		inputFields := graphql.InputObjectConfigFieldMap{}
@@ -280,11 +287,21 @@ func (generator *Generator) getGraphQLType(fieldType reflect.Type, graphqlTagTyp
 		configInput.Fields = inputFields
 
 		typ := graphql.NewInputObject(configInput)
+		switch fieldKind {
+		case reflect.Slice:
+			if isNull {
+				return graphql.NewList(typ)
+			} else {
+				return graphql.NewNonNull(graphql.NewList(typ))
+			}
+		default:
 
-		if isNull {
-			return typ
-		} else {
-			return graphql.NewNonNull(typ)
+			if isNull {
+				return typ
+			} else {
+				return graphql.NewNonNull(typ)
+			}
+
 		}
 	}
 
@@ -351,3 +368,4 @@ func lU(s string) string {
 	a[0] = unicode.ToUpper(a[0])
 	return string(a)
 }
+
